@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="500" viewBox="0 0 720 500">
+  <!-- PLACEHOLDER ART: replace this file with real cover art for the game (see AGENTS.md → Art). -->
+  <rect width="720" height="500" fill="#1d2440"/>
+  <circle cx="560" cy="120" r="210" fill="#2e5bff"/>
+  <circle cx="640" cy="380" r="90" fill="#ffb547"/>
+  <text x="44" y="380" font-family="system-ui, sans-serif" font-weight="800" font-size="76" fill="#ffffff">{{NAME}}</text>
+</svg>

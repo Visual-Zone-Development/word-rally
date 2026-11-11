@@ -1,0 +1,91 @@
+# Moves a finished game out of this workshop into its own repo (npm run promote), from the
+# Actions tab or a phone: Actions → Promote a game → Run workflow. The new repo gets the game at
+# its root plus the one-game template's build kit and agent prompts; its first push builds and
+# publishes the game, and PushPlay moves players' copies over with their saves.
+#
+# One-time setup: a secret PROMOTE_TOKEN that can create repos for this repo's owner (a classic
+# token with the "repo" scope, or a fine-grained one with Administration and Contents set to read
+# and write on all repositories). The workshop's own push uses the workflow's token.
+#
+# Not part of the PushPlay build kit, so `npm run update-kit` leaves it alone.
+name: Promote a game
+
+on:
+  workflow_dispatch:
+    inputs:
+      game:
+        description: Game id (its folder in games/)
+        required: true
+        type: string
+      repo:
+        description: New repo name (default the game id)
+        required: false
+        type: string
+      private:
+        description: Make the new repo private (it can't be listed on Discover)
+        type: boolean
+        default: false
+      keep:
+        description: Keep a copy in this workshop
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-${{ inputs.game }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+
+      - name: Check the token
+        env:
+          GH_TOKEN: ${{ secrets.PROMOTE_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Add a PROMOTE_TOKEN secret that can create repos (see the top of .github/workflows/promote.yml)."
+            exit 1
+          fi
+
+      - name: Install
+        run: |
+          npm ci --no-audit --no-fund
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898283+github-actions[bot]@users.noreply.github.com'
+
+      # The new repo's first build runs the full check, so it isn't repeated here.
+      - name: Promote
+        env:
+          GH_TOKEN: ${{ secrets.PROMOTE_TOKEN }}
+          GAME: ${{ inputs.game }}
+          REPO: ${{ inputs.repo }}
+          OWNER: ${{ github.repository_owner }}
+          PRIVATE: ${{ inputs.private }}
+          KEEP: ${{ inputs.keep }}
+        run: |
+          set -- "$GAME" --skip-check --yes
+          if [ -n "$REPO" ]; then set -- "$@" --repo "$OWNER/$REPO"; fi
+          if [ "$PRIVATE" = "true" ]; then set -- "$@" --private; fi
+          if [ "$KEEP" = "true" ]; then set -- "$@" --keep; fi
+          node tools/promote/promote.mjs "$@"
+
+      - name: Take it out of the workshop
+        if: ${{ !inputs.keep }}
+        run: git push
+
+      - name: Summary
+        env:
+          GAME: ${{ inputs.game }}
+          REPO: ${{ inputs.repo }}
+          OWNER: ${{ github.repository_owner }}
+        run: echo "Promoted **$GAME** to https://github.com/$OWNER/${REPO:-$GAME}. Its first build is running there now." >> "$GITHUB_STEP_SUMMARY"

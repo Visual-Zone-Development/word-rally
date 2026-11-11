@@ -1,0 +1,39 @@
+{
+  "name": "PushPlay",
+  "slug": "pushplay",
+  "appId": "gg.pushplay.launcher",
+  "mobileAppId": "gg.pushplay.app",
+  "scheme": "pushplay",
+  "assetScheme": "pushplay-asset",
+  "manifestFiles": [
+    "pushplay.json"
+  ],
+  "releaseTag": "pushplay-latest",
+  "betaReleaseTag": "pushplay-beta",
+  "indexAsset": "pushplay-index.json",
+  "art": {
+    "cover": {
+      "width": 720,
+      "height": 500
+    },
+    "hero": {
+      "width": 1920,
+      "height": 450
+    }
+  },
+  "legacyReleaseTags": [],
+  "assetPrefix": "pushplay-",
+  "topic": "pushplay-game",
+  "legacyTopics": [],
+  "action": "pushplay/build",
+  "domain": "pushplay.gg",
+  "githubAppClientId": "Iv23liqLU6Gr3rpf4AWK",
+  "launcherRepo": "Visual-Zone-Development/pushplay",
+  "releasesRepo": "Visual-Zone-Development/pushplay-releases",
+  "updateSigningKey": "RWQtMJddfR0tJ8HSbRtgEdSyF29npjrIqcSlG9jvmohZ+/V/gOfc93dh",
+  "relayUrl": "wss://relay.pushplay.gg",
+  "apiUrl": "https://api.pushplay.gg",
+  "releaseKeys": {
+    "2026-1": "62Ukc3RJM2aT1L/c50kIr7l4//y2elW4RTJ5KasFeaA="
+  }
+}

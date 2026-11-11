@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="450" viewBox="0 0 1920 450">
+  <!-- PLACEHOLDER ART: replace this file with a real hero banner for the game (see AGENTS.md → Art). -->
+  <rect width="1920" height="450" fill="#1d2440"/>
+  <circle cx="1480" cy="60" r="420" fill="#2e5bff"/>
+  <circle cx="1760" cy="360" r="160" fill="#ffb547"/>
+</svg>

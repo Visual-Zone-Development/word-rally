@@ -1,0 +1,33 @@
+{
+  "$schema": "./.github/pushplay/manifest.schema.json",
+  "id": "word-rally",
+  "name": "Word Rally",
+  "description": "Three quick word games against the clock: trace words through a letter grid, crack as many hidden five-letter words as you can, and build words from seven letters. Play alone for a best score, or host a room and battle up to seven friends live.",
+  "version": "1.3.0",
+  "entry": {
+    "web": "index.html"
+  },
+  "art": {
+    "cover": "art/cover.svg",
+    "hero": "art/hero.svg"
+  },
+  "controls": "gamepad",
+  "inputs": [
+    "gamepad",
+    "keyboard",
+    "mouse",
+    "touch"
+  ],
+  "players": "1-8",
+  "tags": [
+    "word",
+    "puzzle",
+    "online multiplayer",
+    "score attack"
+  ],
+  "online": true,
+  "phone": {
+    "orientation": "any"
+  },
+  "movedFrom": "Visual-Zone-Development/my-pushplay-games"
+}

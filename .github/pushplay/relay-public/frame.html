@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8" />
+<!-- Runs a game's phone controller. The join page sends it here; this page is sandboxed with
+     no network access (see shell.mjs), so a controller can only talk to the join page. -->
+<script>
+  addEventListener('message', function load(e) {
+    if (e.source !== parent || !e.data || e.data.type !== 'load') return
+    removeEventListener('message', load)
+    document.open()
+    document.write(e.data.html)
+    document.close()
+  })
+  parent.postMessage({ type: 'frame' }, '*')
+</script>

@@ -1,0 +1,9 @@
+<!doctype html>
+<!-- Asset viewer (threejs-models skill) for model-asset / edit-asset / animate-asset. Not part of the game build.
+     viewer.html?unit=orcs.grunt&views=front,34,side,game&anim=idle
+     viewer.html?unit=orcs.grunt&anim=walk&frames=8&views=side      (animation strip)
+     viewer.html?unit=orcs.grunt&compare=orcs.gruntOld&views=front,34 (side by side)
+     viewer.html?list                                                (every asset id) -->
+<html lang="en"><head><meta charset="utf-8" /><title>Asset viewer</title>
+<style>html,body{margin:0;background:#1a1d22;overflow:hidden}canvas{display:block;position:absolute;left:0;top:0;width:1280px;height:800px}</style></head>
+<body><canvas id="gl"></canvas><canvas id="hud"></canvas><script type="module" src="./src/viewer.js"></script></body></html>

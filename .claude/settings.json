@@ -1,0 +1,14 @@
+{
+  "extraKnownMarketplaces": {
+    "tmorren": {
+      "source": { "source": "github", "repo": "tmorren/claude-plugins" }
+    },
+    "mattpocock": {
+      "source": { "source": "github", "repo": "mattpocock/skills" }
+    }
+  },
+  "enabledPlugins": {
+    "toolkit@tmorren": true,
+    "mattpocock-skills@mattpocock": true
+  }
+}

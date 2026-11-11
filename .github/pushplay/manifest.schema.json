@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "version": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "movedFrom": {
+      "type": "string",
+      "pattern": "^[\\w.-]{1,100}\\/[\\w.-]{1,100}$"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "web",
+        "native"
+      ]
+    },
+    "entry": {
+      "type": "object",
+      "properties": {
+        "web": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "linux-x64": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "linux-arm64": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "windows-x64": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "darwin-arm64": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "darwin-x64": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "additionalProperties": false
+    },
+    "build": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "enum": [
+            "vite",
+            "static",
+            "godot"
+          ]
+        },
+        "output": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "additionalProperties": false
+    },
+    "art": {
+      "type": "object",
+      "properties": {
+        "cover": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "hero": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "screenshots": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "controls": {
+      "type": "string",
+      "enum": [
+        "gamepad",
+        "keyboard-mapped"
+      ]
+    },
+    "tags": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9 &'-]{0,23}$"
+      }
+    },
+    "players": {
+      "type": "string",
+      "maxLength": 16
+    },
+    "online": {
+      "type": "boolean"
+    },
+    "party": {
+      "type": "boolean"
+    },
+    "phone": {
+      "type": "object",
+      "properties": {
+        "orientation": {
+          "type": "string",
+          "enum": [
+            "portrait",
+            "landscape",
+            "any"
+          ]
+        }
+      },
+      "required": [
+        "orientation"
+      ],
+      "additionalProperties": false
+    },
+    "inputs": {
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "gamepad",
+          "keyboard",
+          "mouse",
+          "touch"
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "entry"
+  ],
+  "additionalProperties": false
+}

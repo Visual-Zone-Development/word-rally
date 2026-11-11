@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- This game's phone screen. It shows what the TV sends (controller.public for everyone,
+         controller.mine for this player only) and sends back choices (controller.send).
+         Keep it one file with everything inline: phones get it from the TV, with no network.
+         See the comment at the top of controller.js for the whole API. -->
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0f14; color: #eef0f5; font: 18px/1.4 system-ui, sans-serif; }
+      main { display: grid; gap: 16px; padding: 24px; max-width: 520px; margin: 0 auto; }
+      h1 { margin: 0; font-size: 26px; }
+      .quiet { color: #9aa3b5; }
+      button { font: inherit; font-weight: 700; font-size: 20px; padding: 16px; border: 0; border-radius: 14px; background: #262b36; color: #eef0f5; }
+      button.picked { background: var(--me, #ffb547); color: #0d0f14; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title"></h1>
+      <p id="secret" class="quiet"></p>
+      <div id="choices" style="display: grid; gap: 12px"></div>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id)
+
+      function render() {
+        const { public: pub, mine, me } = controller
+        document.body.style.setProperty('--me', me.color)
+        $('title').textContent = pub.prompt ?? 'Look at the TV!'
+        // Only this phone gets `mine`: the TV writes it with party.view(id).
+        $('secret').textContent = mine.secret ? `Your secret: ${mine.secret}` : ''
+        $('choices').replaceChildren(
+          ...(pub.choices ?? []).map((c, i) => {
+            const b = document.createElement('button')
+            b.textContent = c
+            b.className = mine.picked === i ? 'picked' : ''
+            b.onclick = () => {
+              controller.send({ pick: i })
+              controller.vibrate(15)
+            }
+            return b
+          })
+        )
+      }
+      controller.on('update', render)
+      render()
+    </script>
+  </body>
+</html>

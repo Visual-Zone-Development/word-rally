@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0d0f14" />
+    <title>Join a game · {{NAME}}</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/fonts.css" />
+    <link rel="stylesheet" href="/shell.css" />
+    <script type="module" src="/shell.js"></script>
+  </head>
+  <body>
+    <form id="join" class="card" hidden>
+      <div class="brand"><svg class="mark" viewBox="0 0 100 100" aria-hidden="true"><mask id="relay-gap-a"><rect width="100" height="100" fill="#fff"/><circle cx="81.5" cy="18.5" r="16" fill="#000"/></mask><g mask="url(#relay-gap-a)"><circle cx="50" cy="50" r="48" fill="#FFB547"/><circle cx="50" cy="50" r="40" fill="#0D0F14"/></g><circle cx="50" cy="50" r="28" fill="#FFB547"/><path d="M43 38 L62 50 L43 62 Z" fill="#0D0F14" stroke="#0D0F14" stroke-width="5" stroke-linejoin="round"/><g transform="translate(81.5 18.5) scale(0.74) translate(-73 -30)"><circle cx="65" cy="38" r="3.8" fill="#FFB547"/><path d="M65 28 A10 10 0 0 1 75 38 M65 19 A19 19 0 0 1 84 38" fill="none" stroke="#FFB547" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/></g></svg><span>{{NAME}}</span></div>
+      <div>
+        <h1>Join a game</h1>
+        <p class="lede">Type the code on the TV.</p>
+      </div>
+      <label>Room code
+        <input id="code" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="4" inputmode="text" placeholder="ABCD" required />
+      </label>
+      <label>Your name
+        <input id="name" name="name" autocomplete="nickname" maxlength="20" placeholder="Name" required />
+      </label>
+      <fieldset id="colors"><legend>Your colour</legend></fieldset>
+      <p id="error" class="error" role="alert"></p>
+      <button id="go" type="submit">Join game</button>
+    </form>
+
+    <main id="play" hidden>
+      <header>
+        <svg class="mark" viewBox="0 0 100 100" aria-hidden="true"><mask id="relay-gap-b"><rect width="100" height="100" fill="#fff"/><circle cx="81.5" cy="18.5" r="16" fill="#000"/></mask><g mask="url(#relay-gap-b)"><circle cx="50" cy="50" r="48" fill="#FFB547"/><circle cx="50" cy="50" r="40" fill="#0D0F14"/></g><circle cx="50" cy="50" r="28" fill="#FFB547"/><path d="M43 38 L62 50 L43 62 Z" fill="#0D0F14" stroke="#0D0F14" stroke-width="5" stroke-linejoin="round"/><g transform="translate(81.5 18.5) scale(0.74) translate(-73 -30)"><circle cx="65" cy="38" r="3.8" fill="#FFB547"/><path d="M65 28 A10 10 0 0 1 75 38 M65 19 A19 19 0 0 1 84 38" fill="none" stroke="#FFB547" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
+        <span id="me"><i id="swatch"></i><b id="who"></b></span>
+        <span id="room"></span>
+        <button id="leave" type="button" aria-label="Leave">✕</button>
+      </header>
+      <div id="stage"></div>
+      <div id="notice" hidden><div class="spinner" aria-hidden="true"></div><p id="notice-text"></p><button id="notice-button" type="button" hidden></button></div>
+    </main>
+  </body>
+</html>

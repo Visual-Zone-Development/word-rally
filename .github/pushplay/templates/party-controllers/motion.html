@@ -1,0 +1,417 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- The phone as a motion controller (npm run new-game <id> --party --controller motion).
+         createPhoneMotion() reads every sensor event and this page sends, as held input
+         (party.inputs[id]): { tb, tg, ta } tilt in degrees, u "up" in screen axes, gx/gy gyro
+         totals, m strength, a the big button, st motion state ('on' | 'touch' | 'ask' | 'waiting'),
+         still, ph sensor stats. Swings, flicks and shakes are detected here at the full sensor rate
+         and sent as { swing: { dir, p, m, pt } } with pt the moment on this phone's clock; pings
+         are answered with this clock. The TV side is motion.js: createMotion(party) turns all of it
+         into tilt, a steering wheel, swings in TV time and calibration per player.
+         What the TV can set (in party.public, or party.view(id) for one phone):
+           prompt   the card's text          btn   the big button's label (none: no button)
+           cfg      swing detection: { thr, cd, at: 'peak' | 'flip', gk, dz, full, … }
+         Without sensors (plain http, a desktop browser, permission denied) it becomes a touch
+         pad: drag to tilt, flick to swing. Change the look freely; keep it one file. -->
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { margin: 0; height: 100%; background: #0d0f14; color: #eef0f5; font: 18px/1.35 system-ui, sans-serif; overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: none; }
+      main { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px)); max-width: 560px; margin: 0 auto; }
+      main.ask { padding-bottom: 110px; }
+      .bar { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+      .dot { width: 18px; height: 18px; border-radius: 50%; background: var(--me, #ffb547); flex: none; }
+      .chip { margin-left: auto; padding: 6px 12px; border-radius: 999px; background: #262b36; font-size: 15px; white-space: nowrap; }
+      .chip.on { background: #8ce05a; color: #0d0f14; }
+      .chip.warn { background: #ffb547; color: #0d0f14; }
+      .chip.bad { background: #ff6b6b; color: #0d0f14; }
+      .card { background: #1b1f29; border-radius: 18px; padding: 14px 16px; font-weight: 600; }
+      .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+      button { font: inherit; font-weight: 800; border: 0; border-radius: 16px; color: #0d0f14; background: #5aa9ff; padding: 14px 18px; min-height: 60px; }
+      #big { width: min(74vw, 44vh, 320px); aspect-ratio: 1; border-radius: 50%; font-size: 40px; background: var(--me, #ffb547); }
+      #big.down { filter: brightness(0.8); transform: scale(0.96); }
+      #pad { width: min(84vw, 50vh, 380px); aspect-ratio: 1; border-radius: 24px; background: #1b1f29; border: 3px dashed #5a6274; position: relative; touch-action: none; }
+      #knob { position: absolute; width: 60px; height: 60px; margin: -30px; left: 50%; top: 50%; border-radius: 50%; background: var(--me, #ffb547); pointer-events: none; }
+      #meter { position: relative; width: min(80vw, 340px); height: 18px; border-radius: 9px; background: #1b1f29; overflow: hidden; }
+      #meter .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: #5aa9ff; }
+      #meter .thr { position: absolute; top: 0; bottom: 0; width: 4px; background: #ffb547; }
+      #meter.hit .fill { background: #8ce05a; }
+      #center { background: #262b36; color: #eef0f5; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main id="main">
+      <div class="bar"><span class="dot"></span><span id="name"></span><span class="chip" id="state">Starting…</span></div>
+      <div class="card" id="prompt">Look at the screen.</div>
+      <div class="stage">
+        <div id="pad" hidden><div id="knob"></div></div>
+        <button id="big" hidden></button>
+        <div id="meter"><div class="fill" id="fill"></div><div class="thr" id="thr"></div></div>
+      </div>
+      <button id="center">Re-center</button>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id)
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+      const round = (v, k = 10) => Math.round(v * k) / k
+      const DEFAULT_BETA = 35
+      const cfg = () => controller.mine.cfg ?? controller.public.cfg ?? {}
+
+      // ==== phone motion =========================================================================
+      /**
+       * Reads the phone's motion sensors and turns them into what a game needs. Every sensor event
+       * is used (60-200 a second, not one reading per network message), each with its own time, so
+       * a swing's moment is known to the millisecond. It also:
+       *   - takes readings from the join page (which iOS sends them to) or from this frame (which
+       *     Android sends them to once it's tapped), whichever is fresh;
+       *   - turns axes with the screen, so landscape doesn't rotate swipes;
+       *   - learns the gyro's drift while the phone lies still and takes it off;
+       *   - gives tilt as the direction of "up" (no gimbal flip near upright), gyro aiming as
+       *     running totals (a lost message loses nothing), a live strength, and stillness;
+       *   - hands every sample to onSample({ t, dt, a, w, up }) in screen axes (a in m/s², w in
+       *     deg/s about x, y, z) for gestures of the game's own.
+       * Live tuning comes from cfg() (the TV's controller.public.cfg), so nothing here is fixed.
+       */
+      function createPhoneMotion({ cfg, onSwing, onChange, onSample = () => {} }) {
+        const pm = {
+          state: 'waiting', // waiting | ask | on | touch:unsupported | touch:denied | touch:insecure
+          ori: { b: DEFAULT_BETA, g: 0, a: undefined },
+          up: null, // [x, y, z], screen axes: x right, y up the screen, z out of it
+          gyro: { x: 0, y: 0, on: false },
+          m: 0, // strength now (m/s², or the gyro's equivalent when the station counts turning)
+          still: false,
+          hz: 0,
+          bias: 0, // deg/s of gyro drift being taken off
+          angle: 0, // screen rotation, degrees
+          last: -1e9 // performance.now() of the newest reading
+        }
+        const direct = { last: -1e9, ori: null }
+        const bias = [0, 0, 0]
+        const hist = []
+        let lastT = -Infinity
+        let stillFor = 0
+        let restFor = 0
+        let count = 0
+        let countAt = performance.now()
+        let grav = null
+        let swing = null
+        let cooldown = -Infinity
+        const set = (st) => {
+          if (pm.state === st) return
+          pm.state = st
+          onChange()
+        }
+
+        parent.postMessage({ type: 'motion', on: true }, '*')
+        addEventListener('message', (e) => {
+          if (e.source !== parent || e.data?.type !== 'motion') return
+          const d = e.data
+          if (d.state) set(d.state === 'on' || d.state === 'ask' || d.state === 'waiting' ? d.state : 'touch:' + d.state)
+          if (performance.now() - direct.last < 150) return // this frame hears the sensors itself
+          const at = performance.now()
+          if (Array.isArray(d.s) && d.s.length) for (const s of d.s) sample(at - (s.age || 0), s.a, s.g, s.w, s.o)
+          else if (d.r) sample(at, [d.r.x, d.r.y, d.r.z], null, null, [d.r.b, d.r.g, null]) // an older join page
+        })
+        // Android only sends sensor events to the focused frame: listen here too.
+        addEventListener('deviceorientation', (e) => {
+          if (typeof e.beta !== 'number') return
+          direct.ori = [e.beta, e.gamma ?? 0, typeof e.alpha === 'number' ? e.alpha : null]
+        })
+        const vec = (v, ...k) => (v && typeof v[k[0]] === 'number' ? k.map((n) => v[n]) : null)
+        addEventListener('devicemotion', (e) => {
+          const a = vec(e.acceleration, 'x', 'y', 'z')
+          const g = vec(e.accelerationIncludingGravity, 'x', 'y', 'z')
+          const w = vec(e.rotationRate, 'alpha', 'beta', 'gamma')
+          if (!a && !g && !w) return
+          direct.last = performance.now()
+          sample(e.timeStamp || direct.last, a, g, w, direct.ori)
+        })
+        try {
+          screen.orientation?.lock?.('portrait').catch(() => {})
+        } catch {}
+
+        /** Device x/y → screen x/y: the phone turned to landscape turns its axes with it. */
+        function toScreen(x, y) {
+          const r = (pm.angle * Math.PI) / 180
+          const c = Math.cos(r)
+          const s = Math.sin(r)
+          return [x * c - y * s, x * s + y * c]
+        }
+
+        function sample(t, a, g, w, o) {
+          if (t <= lastT - 1) return // already seen (both sources overlapping)
+          const dt = clamp((t - (lastT > -Infinity ? lastT : t - 16)) / 1000, 0.001, 0.05)
+          lastT = t
+          pm.last = performance.now()
+          if (pm.state !== 'on' && !pm.state.startsWith('touch')) set('on')
+          if (pm.state.startsWith('touch')) return
+          count++
+          if (pm.last - countAt >= 1000) {
+            pm.hz = Math.round((count * 1000) / (pm.last - countAt))
+            count = 0
+            countAt = pm.last
+          }
+          pm.angle = screen.orientation?.angle ?? (typeof window.orientation === 'number' ? window.orientation : 0)
+          if (o) pm.ori = { b: o[0], g: o[1], a: typeof o[2] === 'number' ? o[2] : undefined }
+          // Movement without gravity. Some phones only give it with gravity: take a slow average off.
+          if (!a && g) {
+            grav = grav ? grav.map((v, i) => v + (g[i] - v) * 0.08) : [...g]
+            a = g.map((v, i) => v - grav[i])
+          }
+          a ??= [0, 0, 0]
+          // Up, from the phone's own (sensor-fused) orientation, in screen axes.
+          const rb = (pm.ori.b * Math.PI) / 180
+          const rg = (pm.ori.g * Math.PI) / 180
+          const [ux, uy] = toScreen(-Math.sin(rg) * Math.cos(rb), Math.sin(rb))
+          pm.up = [ux, uy, Math.cos(rg) * Math.cos(rb)]
+          const [ax, ay] = toScreen(a[0], a[1])
+          const az = a[2]
+          const am = Math.hypot(ax, ay, az)
+          // Directions in the room, not the phone: up is toward the ceiling (along "up"), right is
+          // the screen's right edge levelled. So a flick up reads as up whether the phone is held
+          // upright or flat like a remote (where the phone's own y axis points forward).
+          const [qx, qy, qz] = pm.up
+          const rx = 1 - qx * qx
+          const ry = -qx * qy
+          const rz = -qx * qz
+          const rl = Math.hypot(rx, ry, rz) || 1
+          const dx = (ax * rx + ay * ry + az * rz) / rl
+          const dy = ax * qx + ay * qy + az * qz
+
+          // Gyro: rotation about the phone's z (alpha), x (beta) and y (gamma), in deg/s.
+          let wx = 0
+          let wy = 0
+          let wz = 0
+          let wm = 0
+          if (w) {
+            const raw = Math.hypot(w[0] - bias[0], w[1] - bias[1], w[2] - bias[2])
+            // Lying still: what the gyro reads is drift. Learn it slowly and take it off.
+            stillFor = raw < 4 && am < 0.35 ? stillFor + dt : 0
+            // Drift is only learned when the phone is truly at rest (on a table, not in a hand
+            // aiming slowly), slowly, and never more than a real gyro drifts: otherwise a steady
+            // aim gets "corrected" away.
+            restFor = Math.hypot(...w) < 1.5 && am < 0.15 ? restFor + dt : 0
+            if (restFor > 1.5) for (let i = 0; i < 3; i++) bias[i] = clamp(bias[i] + (w[i] - bias[i]) * Math.min(1, dt * 0.3), -1.5, 1.5)
+            pm.bias = round(Math.hypot(...bias))
+            wz = w[0] - bias[0]
+            ;[wx, wy] = toScreen(w[1] - bias[1], w[2] - bias[2])
+            wm = Math.hypot(wx, wy, wz)
+            gyroAim(wx, wy, wz, dt)
+          } else stillFor = am < 0.35 ? stillFor + dt : 0
+          pm.still = stillFor > 0.25
+          const c = cfg()
+          pm.m = Math.max(am, wm * (c.gk ?? 0))
+          detect(t, pm.m, ax, ay, az, dx, dy, wm, c)
+          onSample({ t, dt, a: [ax, ay, az], w: [wx, wy, wz], up: pm.up })
+        }
+
+        /**
+         * Gyro aiming, the way Steam Input and JoyShockMapper do it: turning speed moves the sight
+         * like a mouse. Left/right is turning around the real vertical, so it works however the
+         * phone is held; up/down is tipping the top. Tremor is tightened toward zero, slow moves
+         * are smoothed and fast ones go straight through.
+         */
+        function gyroAim(wx, wy, wz, dt) {
+          const c = cfg()
+          const [ux, uy, uz] = pm.up
+          let yaw = wx * ux + wy * uy + wz * uz // turning left is positive
+          let pitch = wx // tipping the top up is positive
+          const speed = Math.hypot(yaw, pitch)
+          const tighten = c.tighten ?? 1.5
+          if (speed < tighten && speed > 0) {
+            yaw *= speed / tighten
+            pitch *= speed / tighten
+          }
+          hist.push([yaw, pitch])
+          if (hist.length > 4) hist.shift()
+          const avg = hist.reduce((s, v) => [s[0] + v[0] / hist.length, s[1] + v[1] / hist.length], [0, 0])
+          const k = clamp((speed - (c.smoothLo ?? 4)) / ((c.smoothHi ?? 12) - (c.smoothLo ?? 4)), 0, 1)
+          pm.gyro.x -= (yaw * k + avg[0] * (1 - k)) * dt
+          pm.gyro.y -= (pitch * k + avg[1] * (1 - k)) * dt
+          pm.gyro.on = true
+        }
+
+        /**
+         * A swing starts when the strength passes the threshold. 'peak' swings (flicks, shakes) end
+         * when it fades and are timed at their strongest moment. 'flip' swings (a bat) are timed
+         * where the push turns into the stop, the fastest moment of the swing, which is when the
+         * acceleration reverses, or for a mostly turning swing when the turning peaks. The readings
+         * that push the same way as the first one give the direction.
+         */
+        function detect(t, m, ax, ay, az, dx, dy, wm, c) {
+          const thr = c.thr ?? 12
+          if (!swing) {
+            if (m >= thr && t > cooldown) swing = { t0: t, m, peakT: t, fx: ax, fy: ay, fz: az, px: dx, py: dy, sx: dx, sy: dy, k: 1, wPeak: wm, wPeakT: t, flipT: 0 }
+            return
+          }
+          const s = swing
+          if (m > s.m) {
+            s.m = m
+            s.peakT = t
+          }
+          if (wm > s.wPeak) {
+            s.wPeak = wm
+            s.wPeakT = t
+          }
+          if (dx * s.px + dy * s.py > 0) {
+            s.sx += dx
+            s.sy += dy
+            s.k++
+          }
+          const flip = c.at === 'flip'
+          const pushed = Math.hypot(s.fx, s.fy, s.fz) > thr * 0.5
+          if (flip && !s.flipT) {
+            if (pushed && ax * s.fx + ay * s.fy + az * s.fz < 0) s.flipT = t
+            else if (!pushed && s.wPeak > 0 && wm < s.wPeak * 0.6) s.flipT = s.wPeakT
+          }
+          const dur = t - s.t0
+          const done = flip ? s.flipT || dur >= (c.winMs ?? 260) : (m < thr * 0.5 && dur >= 8) || dur >= (c.peakMs ?? 110)
+          if (!done) return
+          swing = null
+          cooldown = t + (c.cd ?? 200)
+          const sign = c.inv ? -1 : 1
+          // The average push (not the sum, which would grow with the sensor rate).
+          const ex = (s.sx / s.k) * sign
+          const ey = (s.sy / s.k) * sign
+          let dir = null
+          if (Math.max(Math.abs(ex), Math.abs(ey)) > (c.dz ?? 2)) dir = Math.abs(ex) > Math.abs(ey) ? (ex > 0 ? 'right' : 'left') : ey > 0 ? 'up' : 'down'
+          const full = c.full ?? 32
+          const at = flip ? s.flipT || s.wPeakT : s.peakT
+          onSwing({ dir, p: clamp((s.m - thr) / (full - thr), 0.15, 1), m: s.m, pt: at, raw: { x: round(s.px), y: round(s.py), z: round(s.fz), w: Math.round(s.wPeak) } })
+        }
+        return pm
+      }
+      // ==== end phone motion =====================================================================
+
+      let button = false
+      let touchTilt = null
+      let hitUntil = 0
+      const pm = createPhoneMotion({
+        cfg,
+        onSwing: (s) => {
+          controller.send({ swing: { dir: s.dir, p: round(s.p, 100), m: round(s.m), pt: round(s.pt), age: Math.round(performance.now() - s.pt) } })
+          controller.vibrate(s.dir ? 18 : 12)
+          hitUntil = performance.now() + 250
+        },
+        onChange: () => (render(), send()),
+        onSample: () => send() // controller.input only sends changes, at most 30 a second
+      })
+
+      function send() {
+        const st = pm.state.startsWith('touch') ? 'touch' : pm.state
+        const t = touchTilt ?? pm.ori
+        controller.input({
+          tb: round(t.b),
+          tg: round(t.g),
+          ...(typeof t.a === 'number' ? { ta: round(t.a) } : {}),
+          ...(!touchTilt && pm.up ? { u: pm.up.map((v) => round(v, 1000)) } : {}),
+          ...(pm.gyro.on ? { gx: round(pm.gyro.x, 100), gy: round(pm.gyro.y, 100) } : {}),
+          m: round(pm.m),
+          a: button,
+          st,
+          ...(st === 'touch' ? { why: pm.state.slice(6) } : {}),
+          still: st !== 'on' || pm.still,
+          ph: { hz: pm.hz, o: pm.angle, bias: pm.bias }
+        })
+      }
+
+      // The big button (held: party.inputs[id].a, so party.pressed(id, 'a') works too).
+      const big = $('big')
+      const press = (down) => (e) => {
+        e.preventDefault()
+        if (button === down) return
+        button = down
+        big.classList.toggle('down', down)
+        if (down) controller.vibrate(12)
+        send()
+      }
+      big.addEventListener('pointerdown', press(true))
+      for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) big.addEventListener(ev, press(false))
+      $('center').onclick = () => (controller.send({ center: true }), controller.vibrate(20))
+      controller.on('msg', (d) => {
+        if (d?.ping) controller.send({ pong: d.ping, pt: round(performance.now()) }) // the TV's clock check
+        if (d?.buzz) controller.vibrate(d.buzz)
+      })
+
+      // No sensors: a touch pad. Drag = tilt (±28°), a quick long drag = a swing that way.
+      const pad = $('pad')
+      let drag = null
+      pad.addEventListener('pointerdown', (e) => {
+        pad.setPointerCapture(e.pointerId)
+        drag = { x: e.clientX, y: e.clientY, t: performance.now(), done: false }
+        padMove(e)
+      })
+      pad.addEventListener('pointermove', (e) => drag && padMove(e))
+      const padUp = () => {
+        drag = null
+        touchTilt = { b: DEFAULT_BETA, g: 0 }
+        $('knob').style.left = $('knob').style.top = '50%'
+        send()
+      }
+      pad.addEventListener('pointerup', padUp)
+      pad.addEventListener('pointercancel', padUp)
+      function padMove(e) {
+        const r = pad.getBoundingClientRect()
+        const nx = clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1)
+        const ny = clamp(((e.clientY - r.top) / r.height) * 2 - 1, -1, 1)
+        $('knob').style.left = `${(nx + 1) * 50}%`
+        $('knob').style.top = `${(ny + 1) * 50}%`
+        touchTilt = { b: DEFAULT_BETA + ny * 28, g: nx * 28 }
+        const dx = e.clientX - drag.x
+        const dy = e.clientY - drag.y
+        const dt = performance.now() - drag.t
+        if (!drag.done && Math.hypot(dx, dy) > r.width * 0.22 && dt < 260) {
+          drag.done = true
+          const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
+          controller.send({ swing: { dir, p: round(clamp(1 - dt / 300, 0.3, 1), 100), m: 0, pt: round(performance.now()), age: 0 } })
+          controller.vibrate(15)
+        }
+        send()
+      }
+
+      const STATES = {
+        on: ['Motion on', 'on'],
+        ask: ['Tap "Allow motion" below', 'warn'],
+        waiting: ['Starting sensors…', 'warn'],
+        stalled: ['Motion paused: tap the screen', 'warn'],
+        'touch:unsupported': ['No sensors: touch pad', 'bad'],
+        'touch:denied': ['Motion blocked: touch pad', 'bad'],
+        'touch:insecure': ['Motion needs https: touch pad', 'bad']
+      }
+      // Android stops sending readings to an unfocused frame: say so (a tap brings them back).
+      const stalled = () => pm.state === 'on' && performance.now() - pm.last > 500
+      function render() {
+        const { public: pub, mine, me } = controller
+        document.body.style.setProperty('--me', me.color)
+        $('name').textContent = me.name || 'Phone'
+        const [label, cls] = STATES[stalled() ? 'stalled' : pm.state] ?? [pm.state, '']
+        $('state').textContent = label
+        $('state').className = `chip ${cls}`
+        $('main').className = pm.state === 'ask' ? 'ask' : ''
+        $('prompt').textContent = mine.prompt ?? pub.prompt ?? 'Look at the screen.'
+        const touch = pm.state.startsWith('touch')
+        const btn = mine.btn ?? pub.btn
+        big.hidden = !btn
+        big.textContent = btn ?? ''
+        $('pad').hidden = !touch
+        $('meter').hidden = touch
+      }
+      let wasStalled = false
+      function frame() {
+        requestAnimationFrame(frame)
+        if (stalled() !== wasStalled) ((wasStalled = !wasStalled), render())
+        const c = cfg()
+        const full = (c.full ?? 32) * 1.15
+        $('fill').style.width = `${clamp(pm.m / full, 0, 1) * 100}%`
+        $('thr').style.left = `${clamp((c.thr ?? 12) / full, 0, 1) * 100}%`
+        $('meter').classList.toggle('hit', performance.now() < hitUntil)
+      }
+      controller.on('update', render)
+      render()
+      frame()
+      send()
+    </script>
+  </body>
+</html>

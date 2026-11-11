@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- The phone as a gamepad: a stick on the left, A and B on the right. It sends
+         { x, y, a, b }, the same as a controller plugged into the TV (party.inputs[id]).
+         Change the look freely; keep it one file with everything inline. -->
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0d0f14; color: #eef0f5; font: 16px system-ui, sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; }
+      #pad { position: fixed; inset: 0; display: grid; grid-template-columns: 1fr 1fr; }
+      #stick { position: relative; }
+      #base { position: absolute; width: 150px; height: 150px; margin: -75px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15); left: 50%; top: 50%; }
+      #knob { position: absolute; width: 70px; height: 70px; margin: -35px; border-radius: 50%; background: var(--me, #ffb547); left: 50%; top: 50%; }
+      #buttons { display: grid; place-content: center; grid-template-columns: auto auto; gap: 26px; align-items: center; }
+      .btn { width: 104px; height: 104px; border-radius: 50%; border: 0; font: 800 34px system-ui, sans-serif; color: #0d0f14; }
+      #a { background: var(--me, #ffb547); transform: translateY(26px); }
+      #b { background: #5a6274; color: #eef0f5; transform: translateY(-26px); }
+      .btn.down { filter: brightness(0.75); transform: scale(0.94); }
+      #hint { position: fixed; bottom: 10px; left: 0; right: 0; text-align: center; color: #9aa3b5; font-size: 14px; pointer-events: none; }
+      @media (orientation: landscape) { #hint { display: none; } }
+    </style>
+  </head>
+  <body>
+    <div id="pad">
+      <div id="stick"><div id="base"></div><div id="knob"></div></div>
+      <div id="buttons"><button class="btn" id="b">B</button><button class="btn" id="a">A</button></div>
+    </div>
+    <div id="hint">Turn your phone sideways for more room</div>
+    <script>
+      const state = { x: 0, y: 0, a: false, b: false }
+      const send = () => controller.input(state)
+      controller.on('update', () => document.body.style.setProperty('--me', controller.me.color))
+
+      // Stick: wherever the thumb lands on the left half becomes the centre.
+      const stick = document.getElementById('stick')
+      const base = document.getElementById('base')
+      const knob = document.getElementById('knob')
+      const R = 60
+      let stickId = null
+      let cx = 0
+      let cy = 0
+      stick.addEventListener('pointerdown', (e) => {
+        if (stickId !== null) return
+        stickId = e.pointerId
+        stick.setPointerCapture(e.pointerId)
+        const r = stick.getBoundingClientRect()
+        cx = e.clientX - r.left
+        cy = e.clientY - r.top
+        for (const el of [base, knob]) Object.assign(el.style, { left: `${cx}px`, top: `${cy}px` })
+      })
+      stick.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== stickId) return
+        const r = stick.getBoundingClientRect()
+        let dx = e.clientX - r.left - cx
+        let dy = e.clientY - r.top - cy
+        const d = Math.hypot(dx, dy)
+        if (d > R) [dx, dy] = [(dx / d) * R, (dy / d) * R]
+        Object.assign(knob.style, { left: `${cx + dx}px`, top: `${cy + dy}px` })
+        state.x = Math.round((dx / R) * 100) / 100
+        state.y = Math.round((dy / R) * 100) / 100
+        send()
+      })
+      const release = (e) => {
+        if (e.pointerId !== stickId) return
+        stickId = null
+        Object.assign(knob.style, { left: `${cx}px`, top: `${cy}px` })
+        state.x = state.y = 0
+        send()
+      }
+      stick.addEventListener('pointerup', release)
+      stick.addEventListener('pointercancel', release)
+
+      for (const name of ['a', 'b']) {
+        const el = document.getElementById(name)
+        const set = (down) => (e) => {
+          e.preventDefault()
+          if (state[name] === down) return
+          state[name] = down
+          el.classList.toggle('down', down)
+          if (down) controller.vibrate(12)
+          send()
+        }
+        el.addEventListener('pointerdown', set(true))
+        el.addEventListener('pointerup', set(false))
+        el.addEventListener('pointercancel', set(false))
+        el.addEventListener('pointerleave', set(false))
+      }
+    </script>
+  </body>
+</html>
